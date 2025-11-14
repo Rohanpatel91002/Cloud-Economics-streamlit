@@ -12,7 +12,7 @@ st.title("☁️ CloudMart Multi-Account Cost & Tagging Analysis")
 # LOAD CSV FROM LOCAL PATH (FIXED CODE)
 # -------------------------------
 # NOTE: The local path is a Windows path. Ensure your Streamlit app can access it.
-csv_path = r"C:\Users\rohan\Downloads\activity CE\cloudmart_multi_account.csv"
+csv_path = r"cloudmart_multi_account.csv"
 
 # --- FIX FOR NON-STANDARD CSV FORMAT ---
 # The CSV is incorrectly formatted, causing pandas to load all data into a single column.
