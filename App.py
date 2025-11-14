@@ -1,0 +1,220 @@
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+
+# -------------------------------
+# PAGE CONFIG
+# -------------------------------
+st.set_page_config(page_title="CloudMart Multi-Account Dashboard", layout="wide")
+st.title("☁️ CloudMart Multi-Account Cost & Tagging Analysis")
+
+# -------------------------------
+# LOAD CSV FROM LOCAL PATH (FIXED CODE)
+# -------------------------------
+# NOTE: The local path is a Windows path. Ensure your Streamlit app can access it.
+csv_path = r"C:\Users\rohan\Downloads\activity CE\cloudmart_multi_account.csv"
+
+# --- FIX FOR NON-STANDARD CSV FORMAT ---
+# The CSV is incorrectly formatted, causing pandas to load all data into a single column.
+try:
+    df_single_col = pd.read_csv(csv_path)
+
+    # 1. Get the single column name string (e.g., 'AccountID,ResourceID,Service,...')
+    header_string = df_single_col.columns[0]
+    # 2. Split the string by comma and apply cleaning (.strip() and .replace("\ufeff",""))
+    cleaned_header_list = [col.strip().replace("\ufeff","") for col in header_string.split(',')]
+    # 3. Split the single data column into a new DataFrame with correct column structure
+    df = df_single_col.iloc[:, 0].str.split(',', expand=True)
+    # 4. Assign the correct, cleaned column names
+    df.columns = cleaned_header_list
+    # 5. Convert 'MonthlyCostUSD' to numeric for calculations
+    df['MonthlyCostUSD'] = pd.to_numeric(df['MonthlyCostUSD'])
+    
+    st.success("✅ CSV loaded and columns successfully parsed!")
+    st.write("Columns detected:", df.columns.tolist())
+
+except Exception as e:
+    st.error(f"Error loading or parsing CSV: {e}")
+    st.info("Please ensure the CSV file path is correct and accessible.")
+    df = pd.DataFrame() # Create an empty DataFrame to prevent downstream errors
+
+# ----------------------------------------------------------------------------------
+
+
+# -------------------------------
+# TASK 1 — DATA EXPLORATION
+# -------------------------------
+st.header("📊 Task Set 1 — Data Exploration")
+if not df.empty:
+    st.subheader("1.1 First 5 Rows")
+    st.dataframe(df.head())
+
+    st.subheader("1.2 Missing Values per Column")
+    # Missing values in the original data are represented by empty strings, 
+    # which are loaded as NaN/None when splitting.
+    st.write(df.isnull().sum())
+
+    st.subheader("1.3 Columns With Most Missing Values")
+    st.write(df.isnull().sum().sort_values(ascending=False).head(5))
+
+    st.subheader("1.4 Count of Tagged vs Untagged Resources")
+    if "Tagged" in df.columns:
+        # Note: If there are NaN/missing values in Tagged, they are excluded from value_counts
+        st.write(df["Tagged"].value_counts(dropna=False)) 
+    else:
+        st.warning("Column 'Tagged' not found")
+
+    st.subheader("1.5 Percentage of Untagged Resources")
+    if "Tagged" in df.columns and "No" in df["Tagged"].values:
+        pct_untagged = (df[df["Tagged"] == "No"].shape[0] / df.shape[0]) * 100
+        st.write(f"🔸 {pct_untagged:.2f}% of resources are untagged")
+    elif "Tagged" in df.columns:
+        st.write("🔸 0.00% of resources are untagged (or 'No' tag value not found)")
+
+
+# -------------------------------
+# TASK 2 — COST VISIBILITY
+# -------------------------------
+st.header("💰 Task Set 2 — Cost Visibility")
+if not df.empty and all(col in df.columns for col in ["Tagged", "MonthlyCostUSD"]):
+    st.subheader("2.1 Total Cost: Tagged vs Untagged")
+    st.write(df.groupby("Tagged")["MonthlyCostUSD"].sum())
+
+    st.subheader("2.2 Percentage of Total Cost That is Untagged")
+    total_cost = df["MonthlyCostUSD"].sum()
+    untagged_cost = df[df["Tagged"] == "No"]["MonthlyCostUSD"].sum()
+    
+    if total_cost > 0:
+        st.write(f"🔸 {untagged_cost / total_cost * 100:.2f}% of monthly cost is untagged")
+    else:
+        st.write("🔸 Total cost is zero, cannot calculate percentage.")
+
+
+if not df.empty and "Department" in df.columns and "MonthlyCostUSD" in df.columns:
+    st.subheader("2.3 Department With Most Untagged Cost")
+    if "Tagged" in df.columns:
+        dept_untagged = df[df["Tagged"] == "No"].groupby("Department")["MonthlyCostUSD"].sum()
+        st.write(dept_untagged.sort_values(ascending=False))
+    else:
+        st.warning("Cannot calculate untagged cost by department: 'Tagged' column is missing.")
+
+
+if not df.empty and "Project" in df.columns and "MonthlyCostUSD" in df.columns:
+    st.subheader("2.4 Project With Highest Total Cost")
+    st.write(df.groupby("Project")["MonthlyCostUSD"].sum().sort_values(ascending=False).head(5))
+
+if not df.empty and "Environment" in df.columns and "MonthlyCostUSD" in df.columns:
+    st.subheader("2.5 Prod vs Dev Cost Comparison")
+    if "Tagged" in df.columns:
+        st.write(df.groupby(["Environment", "Tagged"])["MonthlyCostUSD"].sum())
+    else:
+        st.write(df.groupby("Environment")["MonthlyCostUSD"].sum())
+
+
+# -------------------------------
+# TASK 3 — TAGGING COMPLIANCE
+# -------------------------------
+st.header("🏷️ Task Set 3 — Tagging Compliance")
+tag_fields = [col for col in ["Department","Project","Environment","Owner","CostCenter","CreatedBy"] if col in df.columns]
+
+if not df.empty and tag_fields:
+    # Calculate completeness score based on the number of non-null tag fields
+    df["CompletenessScore"] = df[tag_fields].notnull().sum(axis=1)
+
+    st.subheader("3.1 Tag Completeness Score Per Resource")
+    if "ResourceID" in df.columns:
+        st.write(df[["ResourceID","CompletenessScore"]].head())
+    else:
+        st.write(df[["CompletenessScore"]].head())
+
+    st.subheader("3.2 Top 5 Resources With Lowest Completeness Score")
+    st.write(df.sort_values("CompletenessScore").head(5))
+
+    st.subheader("3.3 Most Frequently Missing Tag Fields")
+    st.write(df[tag_fields].isnull().sum().sort_values(ascending=False))
+else:
+    st.warning("No tag columns found to calculate CompletenessScore.")
+
+st.subheader("3.4 Untagged Resources")
+untagged_df = df[df["Tagged"]=="No"].fillna('') if "Tagged" in df.columns else pd.DataFrame()
+st.dataframe(untagged_df)
+
+st.subheader("3.5 Download Untagged Resources CSV")
+if not untagged_df.empty:
+    st.download_button("⬇️ Download Untagged Resources", untagged_df.to_csv(index=False), "untagged.csv")
+
+# -------------------------------
+# TASK 4 — VISUALIZATION DASHBOARD
+# -------------------------------
+st.header("📈 Task Set 4 — Visualization Dashboard")
+
+# Initialize filtered DataFrame
+filtered = df.copy()
+
+# Add filters only if columns exist
+if "Service" in df.columns:
+    service_filter = st.multiselect("Filter by Service", df["Service"].dropna().unique())
+    if service_filter: filtered = filtered[filtered["Service"].isin(service_filter)]
+else:
+    service_filter = []
+
+if "Region" in df.columns:
+    region_filter = st.multiselect("Filter by Region", df["Region"].dropna().unique())
+    if region_filter: filtered = filtered[filtered["Region"].isin(region_filter)]
+else:
+    region_filter = []
+
+if "Department" in df.columns:
+    dept_filter = st.multiselect("Filter by Department", df["Department"].dropna().unique())
+    if dept_filter: filtered = filtered[filtered["Department"].isin(dept_filter)]
+else:
+    dept_filter = []
+
+
+if not filtered.empty:
+    # 4.1 Pie chart: Tagged vs Untagged
+    st.subheader("4.1 Tagged vs Untagged Resources")
+    if "Tagged" in df.columns:
+        fig1 = px.pie(filtered, names="Tagged", title="Tag Compliance")
+        st.plotly_chart(fig1, use_container_width=True)
+
+    # 4.2 Bar chart: Cost per Department by Tag
+    st.subheader("4.2 Cost per Department (Tagged vs Untagged)")
+    if all(col in df.columns for col in ["Department", "MonthlyCostUSD", "Tagged"]):
+        # Ensure MonthlyCostUSD is numeric and fill NaN for aggregation safety
+        dept_cost = filtered.groupby(["Department","Tagged"])["MonthlyCostUSD"].sum().reset_index()
+        fig2 = px.bar(dept_cost, x="Department", y="MonthlyCostUSD", color="Tagged", barmode="group",
+                      title="Total Monthly Cost by Department and Tag Status")
+        st.plotly_chart(fig2, use_container_width=True)
+
+    # 4.3 Horizontal bar: Total cost per Service
+    st.subheader("4.3 Total Cost per Service")
+    if all(col in df.columns for col in ["Service", "MonthlyCostUSD"]):
+        service_cost = filtered.groupby("Service")["MonthlyCostUSD"].sum().sort_values().reset_index()
+        fig3 = px.bar(service_cost, x="MonthlyCostUSD", y="Service", orientation="h",
+                      title="Total Monthly Cost by Service")
+        st.plotly_chart(fig3, use_container_width=True)
+
+    # 4.4 Cost by Environment
+    st.subheader("4.4 Cost by Environment")
+    if all(col in df.columns for col in ["Environment", "MonthlyCostUSD"]):
+        env_cost = filtered.groupby("Environment")["MonthlyCostUSD"].sum().reset_index()
+        fig4 = px.bar(env_cost, x="Environment", y="MonthlyCostUSD", color="Environment",
+                      title="Total Monthly Cost by Environment")
+        st.plotly_chart(fig4, use_container_width=True)
+else:
+    st.warning("No data to display in the Visualization Dashboard.")
+
+
+# -------------------------------
+# TASK 5 — TAG REMEDIATION WORKFLOW
+# -------------------------------
+st.header("🛠️ Task Set 5 — Tag Remediation Workflow")
+st.subheader("Editable Table for Untagged Resources")
+if not untagged_df.empty:
+    edited_table = st.data_editor(untagged_df, num_rows="dynamic")
+    st.download_button("⬇️ Download Updated Untagged Data", edited_table.to_csv(index=False), "updated_tags.csv")
+else:
+    st.info("No untagged resources found or data is empty.")
+
+st.info("✅ App loaded successfully from local CSV!")
