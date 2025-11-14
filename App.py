@@ -14,8 +14,7 @@ st.title("☁️ CloudMart Multi-Account Cost & Tagging Analysis")
 # NOTE: Update this path if you run the app from a different location.
 csv_path = r"cloudmart_multi_account.csv"
 
-# --- FIX FOR NON-STANDARD CSV FORMAT ---
-# The CSV is loaded as a single column due to quotes, so we manually parse it.
+# --- FIX FOR NON-STANDARD CSV FORMAT AND DATA TYPING ---
 try:
     df_single_col = pd.read_csv(csv_path)
 
@@ -32,7 +31,7 @@ try:
     # 4. Replace empty strings with NaN for proper missing value analysis
     df = df.replace(r'^\s*$', float('nan'), regex=True)
 
-    # 5. Convert 'MonthlyCostUSD' to numeric for calculations
+    # 5. Convert 'MonthlyCostUSD' to numeric (Crucial for correct editing in Task 5)
     df['MonthlyCostUSD'] = pd.to_numeric(df['MonthlyCostUSD'])
     
     st.success("✅ CSV loaded and columns successfully parsed!")
@@ -119,16 +118,16 @@ if not df.empty and tag_fields:
     st.subheader("3.3 Most Frequently Missing Tag Fields")
     st.write(df[tag_fields].isnull().sum().sort_values(ascending=False))
     
-    # --- TASK 3.4/3.5 CHANGE START: Filter for ALL incomplete resources ---
+    # --- TASK 3.4/3.5: Filter for ALL incomplete resources ---
     st.subheader("3.4 Incomplete Resources")
     
     # Create a mask: True if ANY of the required tag columns is NaN/missing.
     incomplete_mask = df[tag_fields].isnull().any(axis=1)
     
-    # Filter the DataFrame for incomplete rows and fill NaN for clean display
+    # Filter the DataFrame for incomplete rows and fill NaN for clean display in this section
     incomplete_df = df[incomplete_mask].fillna('') 
     
-    # Use 'untagged_df' for backward compatibility with Task 5 logic
+    # Define 'untagged_df' to be used in the Download button
     untagged_df = incomplete_df
     
     st.dataframe(untagged_df)
@@ -136,8 +135,6 @@ if not df.empty and tag_fields:
     st.subheader("3.5 Download Incomplete Resources CSV")
     if not untagged_df.empty:
         st.download_button("⬇️ Download Incomplete Resources", untagged_df.to_csv(index=False), "incomplete_resources.csv")
-    # --- TASK 3.4/3.5 CHANGE END ---
-
 else:
     untagged_df = pd.DataFrame()
     st.warning("No tag columns found to calculate CompletenessScore.")
@@ -167,6 +164,7 @@ if not filtered.empty:
     # 4.1 Pie chart: Tagged vs Untagged
     st.subheader("4.1 Tagged vs Untagged Resources")
     if "Tagged" in df.columns:
+        # Drop rows where 'Tagged' status itself is missing for plotting clarity
         fig1 = px.pie(filtered.dropna(subset=['Tagged']), names="Tagged", title="Tag Compliance")
         st.plotly_chart(fig1, use_container_width=True)
 
@@ -199,12 +197,11 @@ if not filtered.empty:
 # TASK 5 — TAG REMEDIATION WORKFLOW
 # -------------------------------
 st.header("🛠️ Task Set 5 — Tag Remediation Workflow")
-st.subheader("Editable Table for Incomplete Resources")
-if not untagged_df.empty:
-    # The untagged_df now correctly holds all rows with *any* missing tag
-    edited_table = st.data_editor(untagged_df, num_rows="dynamic")
-    st.download_button("⬇️ Download Updated Tags", edited_table.to_csv(index=False), "updated_tags.csv")
+st.subheader("Editable Table for All Resources") # TITLE CHANGED
+if not df.empty:
+    # --- CHANGE: Using the main DataFrame 'df' which preserves the float type for editing ---
+    edited_table = st.data_editor(df, num_rows="dynamic")
+    # -------------------------------------------------------------------------------------
+    st.download_button("⬇️ Download Updated Data", edited_table.to_csv(index=False), "updated_data.csv")
 else:
-    st.info("All resources are fully tagged or data is empty.")
-
-st.info("✅ App loaded successfully!")
+    st.info("Data is empty.")
